@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.0)
 
 project(yolov5) # 1
-set(OpenCV_DIR "E:/EngineerSrc/CommonLibs/opencv/opencv/build")  #2
-set(TRT_DIR "E:/EngineerSrc/CommonLibs/TensorRT-8.2.0.6")  #3
+set(OpenCV_DIR "C:/Users/admin/Desktop/yolov5_seg/CommonLib/opencv/build/build")  #2
+set(TRT_DIR "C:/Users/admin/Desktop/yolov5_seg/CommonLib/TensorRT")  #3
 
 add_definitions(-std=c++11)
 add_definitions(-DAPI_EXPORTS)
@@ -55,7 +55,9 @@ add_executable(yolov5
     ${PROJECT_SOURCE_DIR}/preprocess.cu 
     ${PROJECT_SOURCE_DIR}/preprocess.h 
     ${PROJECT_SOURCE_DIR}/yololayer.cu 
-    ${PROJECT_SOURCE_DIR}/yololayer.h)   #4
+    ${PROJECT_SOURCE_DIR}/yololayer.h
+    ${PROJECT_SOURCE_DIR}/segmentlayer.cu 
+    ${PROJECT_SOURCE_DIR}/segmentlayer.h)   #4
 
 target_link_libraries(yolov5 "nvinfer" "nvinfer_plugin")   #5
 target_link_libraries(yolov5 ${OpenCV_LIBS})          #6
@@ -66,6 +68,8 @@ add_executable(yolov5_seg
     ${PROJECT_SOURCE_DIR}/yolov5_seg.cpp 
     ${PROJECT_SOURCE_DIR}/preprocess.cu 
     ${PROJECT_SOURCE_DIR}/preprocess.h 
+    ${PROJECT_SOURCE_DIR}/yololayer.cu 
+    ${PROJECT_SOURCE_DIR}/yololayer.h
     ${PROJECT_SOURCE_DIR}/segmentlayer.cu 
     ${PROJECT_SOURCE_DIR}/segmentlayer.h)   #4
 

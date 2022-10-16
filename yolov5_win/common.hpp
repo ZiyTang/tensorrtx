@@ -8,6 +8,7 @@
 #include <opencv2/opencv.hpp>
 #include "NvInfer.h"
 #include "yololayer.h"
+#include "segmentlayer.h"
 
 using namespace nvinfer1;
 
@@ -328,17 +329,17 @@ IPluginV2Layer* addSegmentLayer(INetworkDefinition *network, std::map<std::strin
     auto creator = getPluginRegistry()->getPluginCreator("SegmentLayer_TRT", "1");
     auto anchors = getAnchors(weightMap, lname);
     PluginField plugin_fields[2];
-    int netinfo[4] = {Segment::CLASS_NUM, Segment::INPUT_W, Segment::MASK_NUM, Segment::INPUT_H, Segment::MAX_OUTPUT_BBOX_COUNT};
+    int netinfo[5] = {Seg::CLASS_NUM, Seg::MASK_NUM, Seg::INPUT_W, Seg::INPUT_H, Seg::MAX_OUTPUT_BBOX_COUNT};
     plugin_fields[0].data = netinfo;
-    plugin_fields[0].length = 4;
+    plugin_fields[0].length = 5;
     plugin_fields[0].name = "netinfo";
     plugin_fields[0].type = PluginFieldType::kFLOAT32;
     int scale = 8;
-    std::vector<Segment::YoloKernel> kernels;
+    std::vector<Seg::YoloKernel> kernels;
     for (size_t i = 0; i < anchors.size(); i++) {
-        Segment::YoloKernel kernel;
-        kernel.width = Segment::INPUT_W / scale;
-        kernel.height = Segment::INPUT_H / scale;
+        Seg::YoloKernel kernel;
+        kernel.width = Seg::INPUT_W / scale;
+        kernel.height = Seg::INPUT_H / scale;
         memcpy(kernel.anchors, &anchors[i][0], anchors[i].size() * sizeof(float));
         kernels.push_back(kernel);
         scale *= 2;

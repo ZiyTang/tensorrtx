@@ -6,7 +6,7 @@
 #include <NvInfer.h>
 #include "macros.h"
 
-namespace Segment
+namespace Seg
 {
     static constexpr int CHECK_COUNT = 3;
     static constexpr float IGNORE_THRESH = 0.1f;
@@ -18,6 +18,7 @@ namespace Segment
     };
     static constexpr int MAX_OUTPUT_BBOX_COUNT = 1000;
     static constexpr int CLASS_NUM = 80;
+    static constexpr int PROTO_NUM = 256;
     static constexpr int MASK_NUM = 32;
     static constexpr int INPUT_H = 640;  // yolov5's input height and width must be divisible by 32.
     static constexpr int INPUT_W = 640;
@@ -37,7 +38,8 @@ namespace nvinfer1
     class API SegmentLayerPlugin : public IPluginV2IOExt
     {
     public:
-        SegmentLayerPlugin(int classCount, int netWidth, int netHeight, int maxOut, const std::vector<Segment::YoloKernel>& vYoloKernel);
+        SegmentLayerPlugin(int classCount, int netWidth, int netHeight, 
+            int maxOut, const std::vector<Seg::YoloKernel>& vYoloKernel);
         SegmentLayerPlugin(const void* data, size_t length);
         ~SegmentLayerPlugin();
 

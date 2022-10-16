@@ -16,10 +16,10 @@
 #define MAX_IMAGE_INPUT_SIZE_THRESH 3000 * 3000 // ensure it exceed the maximum size in the input images !
 
 // stuff we know about the network and the input/output blobs
-static const int INPUT_H = Yolo::INPUT_H;
-static const int INPUT_W = Yolo::INPUT_W;
-static const int CLASS_NUM = Yolo::CLASS_NUM;
-static const int OUTPUT_SIZE = Yolo::MAX_OUTPUT_BBOX_COUNT * sizeof(Yolo::DetectionWithSeg) / sizeof(float) + 1;  // we assume the yololayer outputs no more than MAX_OUTPUT_BBOX_COUNT boxes that conf >= 0.1
+static const int INPUT_H = Seg::INPUT_H;
+static const int INPUT_W = Seg::INPUT_W;
+static const int CLASS_NUM = Seg::CLASS_NUM;
+static const int OUTPUT_SIZE = Seg::MAX_OUTPUT_BBOX_COUNT * sizeof(Seg::DetectionWithSeg) / sizeof(float) + 1;  // we assume the yololayer outputs no more than MAX_OUTPUT_BBOX_COUNT boxes that conf >= 0.1
 const char* INPUT_BLOB_NAME = "data";
 const char* OUTPUT_BLOB_NAME = "prob";
 const char* OUTPUT_MASK_NAME = "mask";
@@ -93,37 +93,37 @@ ICudaEngine* build_engine(unsigned int maxBatchSize, IBuilder* builder, IBuilder
     
     /* ------ detect ------ */
     IConvolutionLayer* det0 = network->addConvolutionNd(*bottleneck_csp17->getOutput(0), 
-        3 * (Yolo::CLASS_NUM + Yolo::MASK_NUM + 5), DimsHW{ 1, 1 }, weightMap["model.24.m.0.weight"], weightMap["model.24.m.0.bias"]);
+        3 * (Seg::CLASS_NUM + Seg::MASK_NUM + 5), DimsHW{ 1, 1 }, weightMap["model.24.m.0.weight"], weightMap["model.24.m.0.bias"]);
     auto conv18 = convBlock(network, weightMap, *bottleneck_csp17->getOutput(0), get_width(256, gw), 3, 2, 1, "model.18");
     ITensor* inputTensors19[] = { conv18->getOutput(0), conv14->getOutput(0) };
     auto cat19 = network->addConcatenation(inputTensors19, 2);
     auto bottleneck_csp20 = C3(network, weightMap, *cat19->getOutput(0), 
         get_width(512, gw), get_width(512, gw), get_depth(3, gd), false, 1, 0.5, "model.20");
     IConvolutionLayer* det1 = network->addConvolutionNd(*bottleneck_csp20->getOutput(0), 
-        3 * (Yolo::CLASS_NUM + Yolo::MASK_NUM + 5), DimsHW{ 1, 1 }, weightMap["model.24.m.1.weight"], weightMap["model.24.m.1.bias"]);
+        3 * (Seg::CLASS_NUM + Seg::MASK_NUM + 5), DimsHW{ 1, 1 }, weightMap["model.24.m.1.weight"], weightMap["model.24.m.1.bias"]);
     auto conv21 = convBlock(network, weightMap, *bottleneck_csp20->getOutput(0), get_width(512, gw), 3, 2, 1, "model.21");
     ITensor* inputTensors22[] = { conv21->getOutput(0), conv10->getOutput(0) };
     auto cat22 = network->addConcatenation(inputTensors22, 2);
     auto bottleneck_csp23 = C3(network, weightMap, *cat22->getOutput(0), 
         get_width(1024, gw), get_width(1024, gw), get_depth(3, gd), false, 1, 0.5, "model.23");
     IConvolutionLayer* det2 = network->addConvolutionNd(*bottleneck_csp23->getOutput(0), 
-        3 * (Yolo::CLASS_NUM + Yolo::MASK_NUM + 5), DimsHW{ 1, 1 }, weightMap["model.24.m.2.weight"], weightMap["model.24.m.2.bias"]);
+        3 * (Seg::CLASS_NUM + Seg::MASK_NUM + 5), DimsHW{ 1, 1 }, weightMap["model.24.m.2.weight"], weightMap["model.24.m.2.bias"]);
     
-    auto yolo = addYoLoLayer(network, weightMap, "model.24", Yolo::MASK_NUM, std::vector<IConvolutionLayer*>{det0, det1, det2});
+    auto yolo = addSegmentLayer(network, weightMap, "model.24", std::vector<IConvolutionLayer*>{det0, det1, det2});
     yolo->getOutput(0)->setName(OUTPUT_BLOB_NAME);
     network->markOutput(*yolo->getOutput(0));
 
     /* ------ segment ------ */
-    auto segConv1 = convBlock(network, weightMap, *bottleneck_csp17->getOutput(0), get_width(Yolo::PROTO_NUM, gw), 3, 1, 1, "model.24.proto.cv1");
+    auto segConv1 = convBlock(network, weightMap, *bottleneck_csp17->getOutput(0), get_width(Seg::PROTO_NUM, gw), 3, 1, 1, "model.24.proto.cv1");
     auto segUpsample1 = network->addResize(*segConv1->getOutput(0));
     assert(segUpsample1);
     segUpsample1->setResizeMode(ResizeMode::kNEAREST);
     std::vector<float> segUpsample1Scale{1,2,2};
     segUpsample1->setScales(segUpsample1Scale.data(), (int32_t)segUpsample1Scale.size());
-    auto segConv2 = convBlock(network, weightMap, *segUpsample1->getOutput(0), get_width(Yolo::PROTO_NUM, gw), 3, 1, 1, "model.24.proto.cv2");
-    auto segConv3 = convBlock(network, weightMap, *segConv2->getOutput(0), Yolo::MASK_NUM, 1, 1, 1, "model.24.proto.cv3");
+    auto segConv2 = convBlock(network, weightMap, *segUpsample1->getOutput(0), get_width(Seg::PROTO_NUM, gw), 3, 1, 1, "model.24.proto.cv2");
+    auto segConv3 = convBlock(network, weightMap, *segConv2->getOutput(0), Seg::MASK_NUM, 1, 1, 1, "model.24.proto.cv3");
 
-    // print_dims(segConv3->getOutput(0)->getDimensions());
+    // print_dims(yolo->getOutput(0)->getDimensions());
     segConv3->getOutput(0)->setName(OUTPUT_MASK_NAME);
     network->markOutput(*segConv3->getOutput(0));
     
@@ -175,14 +175,6 @@ void APIToModel(unsigned int maxBatchSize, IHostMemory** modelStream,
     config->destroy();
 }
 
-void doInference(IExecutionContext& context, cudaStream_t& stream, void **buffers, float* output, int batchSize) 
-{
-    // infer on the batch asynchronously, and DMA output back to host
-    context.enqueue(batchSize, buffers, stream, nullptr);
-    CUDA_CHECK(cudaMemcpyAsync(output, buffers[1], batchSize * OUTPUT_SIZE * sizeof(float), cudaMemcpyDeviceToHost, stream));
-    cudaStreamSynchronize(stream);
-}
-
 bool parse_args(int argc, char** argv, std::string& wts, std::string& engine, 
     float& gd, float& gw, std::string& img_dir) 
 {
@@ -226,8 +218,6 @@ int main(int argc, char** argv) {
 
     std::string wts_name = "";
     std::string engine_name = "";
-    bool is_p6 = false;
-    bool is_seg = false;
     float gd = 0.0f, gw = 0.0f;
     std::string img_dir;
     if (!parse_args(argc, argv, wts_name, engine_name, gd, gw, img_dir)) {
@@ -241,7 +231,7 @@ int main(int argc, char** argv) {
     // create a model using the API directly and serialize it to a stream
     if (!wts_name.empty()) {
         IHostMemory* modelStream{ nullptr };
-        APIToModel(BATCH_SIZE, &modelStream, is_p6, is_seg, gd, gw, wts_name);
+        APIToModel(BATCH_SIZE, &modelStream, gd, gw, wts_name);
         assert(modelStream != nullptr);
         std::ofstream p(engine_name, std::ios::binary);
         if (!p) {
@@ -274,9 +264,8 @@ int main(int argc, char** argv) {
         std::cerr << "read_files_in_dir failed." << std::endl;
         return -1;
     }
-
     static float prob[BATCH_SIZE * OUTPUT_SIZE];
-    static float mask[BATCH_SIZE * Yolo::MASK_NUM];
+    static float mask[BATCH_SIZE * Seg::MASK_NUM];
     IRuntime* runtime = createInferRuntime(gLogger);
     assert(runtime != nullptr);
     ICudaEngine* engine = runtime->deserializeCudaEngine(trtModelStream, size);
@@ -284,7 +273,7 @@ int main(int argc, char** argv) {
     IExecutionContext* context = engine->createExecutionContext();
     assert(context != nullptr);
     delete[] trtModelStream;
-    assert(engine->getNbBindings() == 2);
+    assert(engine->getNbBindings() == 3);
     float* buffers[3];
     // In order to bind the buffers, we need to know the names of the input and output tensors.
     // Note that indices are guaranteed to be less than IEngine::getNbBindings()
@@ -293,10 +282,11 @@ int main(int argc, char** argv) {
     const int maskIndex = engine->getBindingIndex(OUTPUT_MASK_NAME);
     assert(inputIndex == 0);
     assert(outputIndex == 1);
+    assert(maskIndex == 2);
     // Create GPU buffers on device
     CUDA_CHECK(cudaMalloc((void**)&buffers[inputIndex], BATCH_SIZE * 3 * INPUT_H * INPUT_W * sizeof(float)));
     CUDA_CHECK(cudaMalloc((void**)&buffers[outputIndex], BATCH_SIZE * OUTPUT_SIZE * sizeof(float)));
-    CUDA_CHECK(cudaMalloc((void**)&buffers[maskIndex], BATCH_SIZE * Yolo::MASK_NUM * sizeof(float)));
+    CUDA_CHECK(cudaMalloc((void**)&buffers[maskIndex], BATCH_SIZE * Seg::MASK_NUM * sizeof(float)));
 
     // Create stream
     cudaStream_t stream;
@@ -331,18 +321,18 @@ int main(int argc, char** argv) {
         auto start = std::chrono::system_clock::now();
         (*context).enqueue(BATCH_SIZE, (void**)buffers, stream, nullptr);
         CUDA_CHECK(cudaMemcpyAsync(
-            prob, buffers[outputIndex], BATCH_SIZE * OUTPUT_WITH_SEG_SIZE * sizeof(float), cudaMemcpyDeviceToHost, stream));
+            prob, buffers[outputIndex], BATCH_SIZE * OUTPUT_SIZE * sizeof(float), cudaMemcpyDeviceToHost, stream));
         CUDA_CHECK(cudaMemcpyAsync(
-            mask, buffers[maskIndex], BATCH_SIZE * Yolo::MASK_NUM * sizeof(float), cudaMemcpyDeviceToHost, stream));
+            mask, buffers[maskIndex], BATCH_SIZE * Seg::MASK_NUM * sizeof(float), cudaMemcpyDeviceToHost, stream));
         cudaStreamSynchronize(stream);
         auto end = std::chrono::system_clock::now();
         std::cout << "inference time: " 
                     << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() 
                     << "ms" << std::endl;
-        std::vector<std::vector<Yolo::DetectionWithSeg>> batch_res(fcount);
+        std::vector<std::vector<Seg::DetectionWithSeg>> batch_res(fcount);
         for (int b = 0; b < fcount; b++) {
             auto& res = batch_res[b];
-            nms<Yolo::DetectionWithSeg>(res, &prob[b * OUTPUT_WITH_SEG_SIZE], CONF_THRESH, NMS_THRESH);
+            nms<Seg::DetectionWithSeg>(res, &prob[b * OUTPUT_SIZE], CONF_THRESH, NMS_THRESH);
         }
         for (int b = 0; b < fcount; b++) {
             auto& res = batch_res[b];

@@ -21,12 +21,12 @@ namespace Tn
     }
 }
 
-using namespace Segment;
+using namespace Seg;
 
 namespace nvinfer1
 {
     SegmentLayerPlugin::SegmentLayerPlugin(int classCount, int maskNum, int netWidth, int netHeight, int maxOut, 
-        const std::vector<Segment::YoloKernel>& vYoloKernel)
+        const std::vector<Seg::YoloKernel>& vYoloKernel)
     {
         mClassCount = classCount;
         mMaskNum = maskNum;
@@ -34,7 +34,7 @@ namespace nvinfer1
         mYoloV5NetHeight = netHeight;
         mMaxOutObject = maxOut;
         mYoloKernel = vYoloKernel;
-        mKernelCount = vYoloKernel.size();
+        mKernelCount = (int)vYoloKernel.size();
 
         CUDA_CHECK(cudaMallocHost(&mAnchor, mKernelCount * sizeof(void*)));
         size_t AnchorLen = sizeof(float)* CHECK_COUNT * 2;
@@ -102,7 +102,7 @@ namespace nvinfer1
     size_t SegmentLayerPlugin::getSerializationSize() const TRT_NOEXCEPT
     {
         return sizeof(mClassCount) + sizeof(mMaskNum) + sizeof(mThreadCount) + sizeof(mKernelCount) + 
-            sizeof(Segment::YoloKernel) * mYoloKernel.size() + sizeof(mYoloV5NetWidth) + 
+            sizeof(Seg::YoloKernel) * mYoloKernel.size() + sizeof(mYoloV5NetWidth) + 
             sizeof(mYoloV5NetHeight) + sizeof(mMaxOutObject);
     }
 
@@ -185,9 +185,9 @@ namespace nvinfer1
         return p;
     }
 
-    __device__ float Logist(float data) { return 1.0f / (1.0f + expf(-data)); };
+    __device__ float LogistSeg(float data) { return 1.0f / (1.0f + expf(-data)); };
 
-    __global__ void CalDetection(const float *input, float *output, int noElements,
+    __global__ void CalSegmentation(const float *input, float *output, int noElements,
         const int netwidth, const int netheight, int maxoutobject, int yoloWidth, int yoloHeight, 
         const float anchors[CHECK_COUNT * 2], int classes, int maskNum, int outputElem)
     {
@@ -198,21 +198,22 @@ namespace nvinfer1
         int total_grid = yoloWidth * yoloHeight;
         int bnIdx = idx / total_grid;
         idx = idx - total_grid * bnIdx;
-        int info_len_i = 5 + classes;
+        int info_len_i = 5 + classes + maskNum;
         const float* curInput = input + bnIdx * (info_len_i * total_grid * CHECK_COUNT);
 
         for (int k = 0; k < CHECK_COUNT; ++k) {
-            float box_prob = Logist(curInput[idx + k * info_len_i * total_grid + 4 * total_grid]);
+            float box_prob = LogistSeg(curInput[idx + k * info_len_i * total_grid + 4 * total_grid]);
             if (box_prob < IGNORE_THRESH) continue;
             int class_id = 0;
             float max_cls_prob = 0.0;
-            for (int i = 5; i < info_len_i; ++i) {
-                float p = Logist(curInput[idx + k * info_len_i * total_grid + i * total_grid]);
+            for (int i = 5; i < info_len_i - maskNum; ++i) {
+                float p = LogistSeg(curInput[idx + k * info_len_i * total_grid + i * total_grid]);
                 if (p > max_cls_prob) {
                     max_cls_prob = p;
                     class_id = i - 5;
                 }
             }
+
             float *res_count = output + bnIdx * outputElem;
             int count = (int)atomicAdd(res_count, 1);
             if (count >= maxoutobject) return;
@@ -222,23 +223,24 @@ namespace nvinfer1
             int row = idx / yoloWidth;
             int col = idx % yoloWidth;
 
-            det->bbox[0] = (col - 0.5f + 2.0f * Logist(curInput[idx + k * info_len_i * total_grid + 0 * total_grid])) * netwidth / yoloWidth;
-            det->bbox[1] = (row - 0.5f + 2.0f * Logist(curInput[idx + k * info_len_i * total_grid + 1 * total_grid])) * netheight / yoloHeight;
+            det->bbox[0] = (col - 0.5f + 2.0f * LogistSeg(curInput[idx + k * info_len_i * total_grid + 0 * total_grid])) * netwidth / yoloWidth;
+            det->bbox[1] = (row - 0.5f + 2.0f * LogistSeg(curInput[idx + k * info_len_i * total_grid + 1 * total_grid])) * netheight / yoloHeight;
 
-            det->bbox[2] = 2.0f * Logist(curInput[idx + k * info_len_i * total_grid + 2 * total_grid]);
+            det->bbox[2] = 2.0f * LogistSeg(curInput[idx + k * info_len_i * total_grid + 2 * total_grid]);
             det->bbox[2] = det->bbox[2] * det->bbox[2] * anchors[2 * k];
-            det->bbox[3] = 2.0f * Logist(curInput[idx + k * info_len_i * total_grid + 3 * total_grid]);
+            det->bbox[3] = 2.0f * LogistSeg(curInput[idx + k * info_len_i * total_grid + 3 * total_grid]);
             det->bbox[3] = det->bbox[3] * det->bbox[3] * anchors[2 * k + 1];
             det->conf = box_prob * max_cls_prob;
             det->class_id = class_id;
+            for (int i = 0; i < maskNum; i++) {
+                det->mask[i] = curInput[idx + k * info_len_i * total_grid + (i + 5 + classes) * total_grid];
+            }
         }
     }
 
     void SegmentLayerPlugin::forwardGpu(const float* const* inputs, float *output, cudaStream_t stream, int batchSize)
     {
-        int outputElem;
-        outputElem = 1 + mMaxOutObject * sizeof(DetectionWithSeg) / sizeof(float);
-        
+        int outputElem = 1 + mMaxOutObject * sizeof(DetectionWithSeg) / sizeof(float);
         for (int idx = 0; idx < batchSize; ++idx) {
             CUDA_CHECK(cudaMemsetAsync(output + idx * outputElem, 0, sizeof(float), stream));
         }
@@ -249,7 +251,7 @@ namespace nvinfer1
             if (numElem < mThreadCount) mThreadCount = numElem;
 
             //printf("Net: %d  %d \n", mYoloV5NetWidth, mYoloV5NetHeight);
-            CalDetection << < (numElem + mThreadCount - 1) / mThreadCount, mThreadCount, 0, stream >> >
+            CalSegmentation <<< (numElem + mThreadCount - 1) / mThreadCount, mThreadCount, 0, stream >>>
                 (inputs[i], output, numElem, mYoloV5NetWidth, mYoloV5NetHeight, mMaxOutObject, 
                 yolo.width, yolo.height, (float*)mAnchor[i], mClassCount, mMaskNum, outputElem);
         }
@@ -269,7 +271,7 @@ namespace nvinfer1
     {
         mPluginAttributes.clear();
 
-        mFC.nbFields = mPluginAttributes.size();
+        mFC.nbFields = (int)mPluginAttributes.size();
         mFC.fields = mPluginAttributes.data();
     }
 
@@ -299,8 +301,8 @@ namespace nvinfer1
         int input_w = p_netinfo[2];
         int input_h = p_netinfo[3];
         int max_output_object_count = p_netinfo[4];
-        std::vector<Segment::YoloKernel> kernels(fc->fields[1].length);
-        memcpy(&kernels[0], fc->fields[1].data, kernels.size() * sizeof(Segment::YoloKernel));
+        std::vector<Seg::YoloKernel> kernels(fc->fields[1].length);
+        memcpy(&kernels[0], fc->fields[1].data, kernels.size() * sizeof(Seg::YoloKernel));
         SegmentLayerPlugin* obj = new SegmentLayerPlugin(class_count, mask_num, input_w, input_h, max_output_object_count, kernels);
         obj->setPluginNamespace(mNamespace.c_str());
         return obj;
