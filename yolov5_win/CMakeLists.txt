@@ -1,6 +1,8 @@
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 3.0)
 
-project(yolov5)
+project(yolov5) # 1
+set(OpenCV_DIR "E:/EngineerSrc/CommonLibs/opencv/opencv/build")  #2
+set(TRT_DIR "E:/EngineerSrc/CommonLibs/TensorRT-8.2.0.6")  #3
 
 add_definitions(-std=c++11)
 add_definitions(-DAPI_EXPORTS)
@@ -8,44 +10,68 @@ option(CUDA_USE_STATIC_CUDA_RUNTIME OFF)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_BUILD_TYPE Debug)
 
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads)
+
+# setup CUDA
 find_package(CUDA REQUIRED)
+message(STATUS "    libraries: ${CUDA_LIBRARIES}")
+message(STATUS "    include path: ${CUDA_INCLUDE_DIRS}")
 
-if(WIN32)
-enable_language(CUDA)
-endif(WIN32)
+include_directories(${CUDA_INCLUDE_DIRS})
 
+####
+enable_language(CUDA)  # add this line, then no need to setup cuda path in vs
+####
 include_directories(${PROJECT_SOURCE_DIR}/include)
-# include and link dirs of cuda and tensorrt, you need adapt them if yours are different
-# cuda
-include_directories(/usr/local/cuda/include)
-link_directories(/usr/local/cuda/lib64)
-# tensorrt
-include_directories(/usr/include/x86_64-linux-gnu/)
-link_directories(/usr/lib/x86_64-linux-gnu/)
+include_directories(${TRT_DIR}/include)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Ofast -g -Wfatal-errors -D_MWAITXINTRIN_H_INCLUDED")
-cuda_add_library(myplugins SHARED yololayer.cu)
-target_link_libraries(myplugins nvinfer cudart)
+# -D_MWAITXINTRIN_H_INCLUDED for solving error: identifier "__builtin_ia32_mwaitx" is undefined
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Ofast -D_MWAITXINTRIN_H_INCLUDED")
 
-find_package(OpenCV)
+# setup opencv
+find_package(OpenCV QUIET
+    NO_MODULE
+    NO_DEFAULT_PATH
+    NO_CMAKE_PATH
+    NO_CMAKE_ENVIRONMENT_PATH
+    NO_SYSTEM_ENVIRONMENT_PATH
+    NO_CMAKE_PACKAGE_REGISTRY
+    NO_CMAKE_BUILDS_PATH
+    NO_CMAKE_SYSTEM_PATH
+    NO_CMAKE_SYSTEM_PACKAGE_REGISTRY
+)
+
+message(STATUS "OpenCV library status:")
+message(STATUS "    version: ${OpenCV_VERSION}")
+message(STATUS "    libraries: ${OpenCV_LIBS}")
+message(STATUS "    include path: ${OpenCV_INCLUDE_DIRS}")
+
 include_directories(${OpenCV_INCLUDE_DIRS})
+link_directories(${TRT_DIR}/lib)
 
-cuda_add_executable(yolov5 calibrator.cpp yolov5.cpp preprocess.cu)
+add_executable(yolov5 
+    ${PROJECT_SOURCE_DIR}/yolov5.cpp 
+    ${PROJECT_SOURCE_DIR}/preprocess.cu 
+    ${PROJECT_SOURCE_DIR}/preprocess.h 
+    ${PROJECT_SOURCE_DIR}/yololayer.cu 
+    ${PROJECT_SOURCE_DIR}/yololayer.h)   #4
 
-target_link_libraries(yolov5 nvinfer)
-target_link_libraries(yolov5 cudart)
-target_link_libraries(yolov5 myplugins)
-target_link_libraries(yolov5 ${OpenCV_LIBS})
+target_link_libraries(yolov5 "nvinfer" "nvinfer_plugin")   #5
+target_link_libraries(yolov5 ${OpenCV_LIBS})          #6
+target_link_libraries(yolov5 ${CUDA_LIBRARIES})   #7
+target_link_libraries(yolov5 Threads::Threads)       #8
 
-add_executable(yolov5-cls calibrator.cpp yolov5_cls.cpp)
+add_executable(yolov5_seg 
+    ${PROJECT_SOURCE_DIR}/yolov5_seg.cpp 
+    ${PROJECT_SOURCE_DIR}/preprocess.cu 
+    ${PROJECT_SOURCE_DIR}/preprocess.h 
+    ${PROJECT_SOURCE_DIR}/segmentlayer.cu 
+    ${PROJECT_SOURCE_DIR}/segmentlayer.h)   #4
 
-target_link_libraries(yolov5-cls nvinfer)
-target_link_libraries(yolov5-cls cudart)
-target_link_libraries(yolov5-cls myplugins)
-target_link_libraries(yolov5-cls ${OpenCV_LIBS})
-
-if(UNIX)
-add_definitions(-O2 -pthread)
-endif(UNIX)
+target_link_libraries(yolov5_seg "nvinfer" "nvinfer_plugin")   #5
+target_link_libraries(yolov5_seg ${OpenCV_LIBS})          #6
+target_link_libraries(yolov5_seg ${CUDA_LIBRARIES})   #7
+target_link_libraries(yolov5_seg Threads::Threads)       #8
 
 

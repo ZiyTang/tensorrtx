@@ -52,24 +52,26 @@ float iou(float lbox[4], float rbox[4]) {
     return interBoxS / (lbox[2] * lbox[3] + rbox[2] * rbox[3] - interBoxS);
 }
 
-bool cmp(const Yolo::Detection& a, const Yolo::Detection& b) {
+template <class T>
+bool cmp(const T& a, const T& b) {
     return a.conf > b.conf;
 }
 
-void nms(std::vector<Yolo::Detection>& res, float *output, float conf_thresh, float nms_thresh = 0.5) {
-    int det_size = sizeof(Yolo::Detection) / sizeof(float);
-    std::map<float, std::vector<Yolo::Detection>> m;
+template <class T>
+void nms(std::vector<T>& res, float *output, float conf_thresh, float nms_thresh = 0.5) {
+    int det_size = sizeof(T) / sizeof(float);
+    std::map<float, std::vector<T>> m;
     for (int i = 0; i < output[0] && i < Yolo::MAX_OUTPUT_BBOX_COUNT; i++) {
         if (output[1 + det_size * i + 4] <= conf_thresh) continue;
-        Yolo::Detection det;
+        T det;
         memcpy(&det, &output[1 + det_size * i], det_size * sizeof(float));
-        if (m.count(det.class_id) == 0) m.emplace(det.class_id, std::vector<Yolo::Detection>());
+        if (m.count(det.class_id) == 0) m.emplace(det.class_id, std::vector<T>());
         m[det.class_id].push_back(det);
     }
     for (auto it = m.begin(); it != m.end(); it++) {
         //std::cout << it->second[0].class_id << " --- " << std::endl;
         auto& dets = it->second;
-        std::sort(dets.begin(), dets.end(), cmp);
+        std::sort(dets.begin(), dets.end(), cmp<T>);
         for (size_t m = 0; m < dets.size(); ++m) {
             auto& item = dets[m];
             res.push_back(item);
@@ -285,7 +287,8 @@ std::vector<std::vector<float>> getAnchors(std::map<std::string, Weights>& weigh
     return anchors;
 }
 
-IPluginV2Layer* addYoLoLayer(INetworkDefinition *network, std::map<std::string, Weights>& weightMap, std::string lname, std::vector<IConvolutionLayer*> dets) {
+IPluginV2Layer* addYoLoLayer(INetworkDefinition *network, std::map<std::string, Weights>& weightMap, 
+    std::string lname, std::vector<IConvolutionLayer*> dets) {
     auto creator = getPluginRegistry()->getPluginCreator("YoloLayer_TRT", "1");
     auto anchors = getAnchors(weightMap, lname);
     PluginField plugin_fields[2];
@@ -318,6 +321,42 @@ IPluginV2Layer* addYoLoLayer(INetworkDefinition *network, std::map<std::string, 
     }
     auto yolo = network->addPluginV2(&input_tensors[0], input_tensors.size(), *plugin_obj);
     return yolo;
+}
+
+IPluginV2Layer* addSegmentLayer(INetworkDefinition *network, std::map<std::string, Weights>& weightMap, 
+    std::string lname, std::vector<IConvolutionLayer*> dets) {
+    auto creator = getPluginRegistry()->getPluginCreator("SegmentLayer_TRT", "1");
+    auto anchors = getAnchors(weightMap, lname);
+    PluginField plugin_fields[2];
+    int netinfo[4] = {Segment::CLASS_NUM, Segment::INPUT_W, Segment::MASK_NUM, Segment::INPUT_H, Segment::MAX_OUTPUT_BBOX_COUNT};
+    plugin_fields[0].data = netinfo;
+    plugin_fields[0].length = 4;
+    plugin_fields[0].name = "netinfo";
+    plugin_fields[0].type = PluginFieldType::kFLOAT32;
+    int scale = 8;
+    std::vector<Segment::YoloKernel> kernels;
+    for (size_t i = 0; i < anchors.size(); i++) {
+        Segment::YoloKernel kernel;
+        kernel.width = Segment::INPUT_W / scale;
+        kernel.height = Segment::INPUT_H / scale;
+        memcpy(kernel.anchors, &anchors[i][0], anchors[i].size() * sizeof(float));
+        kernels.push_back(kernel);
+        scale *= 2;
+    }
+    plugin_fields[1].data = &kernels[0];
+    plugin_fields[1].length = kernels.size();
+    plugin_fields[1].name = "kernels";
+    plugin_fields[1].type = PluginFieldType::kFLOAT32;
+    PluginFieldCollection plugin_data;
+    plugin_data.nbFields = 2;
+    plugin_data.fields = plugin_fields;
+    IPluginV2 *plugin_obj = creator->createPlugin("segmentlayer", &plugin_data);
+    std::vector<ITensor*> input_tensors;
+    for (auto det: dets) {
+        input_tensors.push_back(det->getOutput(0));
+    }
+    auto segment = network->addPluginV2(&input_tensors[0], input_tensors.size(), *plugin_obj);
+    return segment;
 }
 #endif  // YOLOV5_COMMON_H_
 
