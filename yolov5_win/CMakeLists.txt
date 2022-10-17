@@ -14,6 +14,7 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads)
 
 # setup CUDA
+set(CUDA_TOOLKIT_ROOT_DIR "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.0")
 find_package(CUDA REQUIRED)
 message(STATUS "    libraries: ${CUDA_LIBRARIES}")
 message(STATUS "    include path: ${CUDA_INCLUDE_DIRS}")

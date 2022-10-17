@@ -12,10 +12,33 @@
 
 using namespace nvinfer1;
 
+static std::vector<cv::Vec3b> COLOR = {
+    cv::Vec3b(0xFF, 0x38, 0x38),
+    cv::Vec3b(0xFF, 0x9D, 0x97),
+    cv::Vec3b(0xFF, 0x70, 0x1F),
+    cv::Vec3b(0xFF, 0xB2, 0x1D),
+    cv::Vec3b(0xCF, 0xD2, 0x31),
+    cv::Vec3b(0x48, 0xF9, 0x0A),
+    cv::Vec3b(0x92, 0xCC, 0x17),
+    cv::Vec3b(0x3D, 0xDB, 0x86),
+    cv::Vec3b(0x1A, 0x93, 0x34),
+    cv::Vec3b(0x00, 0xD4, 0xBB),
+    cv::Vec3b(0x2C, 0x99, 0xA8),
+    cv::Vec3b(0x00, 0xC2, 0xFF),
+    cv::Vec3b(0x34, 0x45, 0x93),
+    cv::Vec3b(0x64, 0x73, 0xFF),
+    cv::Vec3b(0x00, 0x18, 0xEC),
+    cv::Vec3b(0x84, 0x38, 0xFF),
+    cv::Vec3b(0x52, 0x00, 0x85),
+    cv::Vec3b(0xCB, 0x38, 0xFF),
+    cv::Vec3b(0xFF, 0x95, 0xC8),
+    cv::Vec3b(0xFF, 0x37, 0xC7)
+};
+
 cv::Rect get_rect(cv::Mat& img, float bbox[4]) {
     float l, r, t, b;
-    float r_w = Yolo::INPUT_W / (img.cols * 1.0);
-    float r_h = Yolo::INPUT_H / (img.rows * 1.0);
+    float r_w = Yolo::INPUT_W / (img.cols * 1.f);
+    float r_h = Yolo::INPUT_H / (img.rows * 1.f);
     if (r_h > r_w) {
         l = bbox[0] - bbox[2] / 2.f;
         r = bbox[0] + bbox[2] / 2.f;
@@ -36,6 +59,47 @@ cv::Rect get_rect(cv::Mat& img, float bbox[4]) {
         b = b / r_h;
     }
     return cv::Rect(round(l), round(t), round(r - l), round(b - t));
+}
+
+cv::Mat get_mask(int batch, cv::Mat& img, std::vector<Seg::DetectionWithSeg> res, float* mask) 
+{    
+    int l, r, t, b;
+    float r_w = Seg::INPUT_W / (img.cols * 1.f);
+    float r_h = Seg::INPUT_H / (img.rows * 1.f);
+    if (img.cols > img.rows) {
+        l = 0;
+        r = Seg::INPUT_W / 4;
+        t = ((Seg::INPUT_H - r_w * img.rows) / 2) / 4;
+        b = (Seg::INPUT_H - (Seg::INPUT_H - r_w * img.rows) / 2) / 4;
+    } else {
+        l = ((Seg::INPUT_W - r_h * img.cols) / 2) / 4;
+        r = (Seg::INPUT_W - (Seg::INPUT_W - r_h * img.cols) / 2) / 4;
+        t = 0;
+        b = Seg::INPUT_H / 4;
+    }
+    cv::Mat ret = cv::Mat::zeros(b - t, r - l, CV_8UC3);
+    for (auto result : res) {
+        float box_left = (result.bbox[0] - result.bbox[2] / 2.f) / 4.f;
+        float box_right = (result.bbox[0] + result.bbox[2] / 2.f) / 4.f;
+        float box_top = (result.bbox[1] - result.bbox[3] / 2.f) / 4.f;
+        float box_bot = (result.bbox[1] + result.bbox[3] / 2.f) / 4.f;
+        for (int x = l; x < r; x++) {
+            for (int y = t; y < b; y++) {
+                if (x < box_left || x > box_right || y < box_top || y > box_bot) continue;
+                float mask_prob = 0;
+                int maskIdx = batch*160*160*Seg::MASK_NUM + x + y*160;
+                for (int idx_ = 0; idx_ < Seg::MASK_NUM; idx_++) {
+                    mask_prob += result.mask[idx_] * mask[maskIdx + idx_*160*160];
+                }
+                mask_prob = 1.0f / (1.0f + expf(-mask_prob));
+                if (mask_prob > 0.5f) {
+                    ret.at<cv::Vec3b>(y - t, x - l) = COLOR.at((int)result.class_id % 20);
+                }
+            }
+        } 
+    }
+    cv::resize(ret, ret, cv::Size(img.cols, img.rows), 0, 0, cv::INTER_NEAREST);
+    return ret;
 }
 
 float iou(float lbox[4], float rbox[4]) {

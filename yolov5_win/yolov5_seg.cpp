@@ -16,6 +16,28 @@
 #define MAX_IMAGE_INPUT_SIZE_THRESH 3000 * 3000 // ensure it exceed the maximum size in the input images !
 
 // stuff we know about the network and the input/output blobs
+// static std::vector<cv::Vec3b> COLOR = {
+//     cv::Vec3b(0xFF, 0x38, 0x38),
+//     cv::Vec3b(0xFF, 0x9D, 0x97),
+//     cv::Vec3b(0xFF, 0x70, 0x1F),
+//     cv::Vec3b(0xFF, 0xB2, 0x1D),
+//     cv::Vec3b(0xCF, 0xD2, 0x31),
+//     cv::Vec3b(0x48, 0xF9, 0x0A),
+//     cv::Vec3b(0x92, 0xCC, 0x17),
+//     cv::Vec3b(0x3D, 0xDB, 0x86),
+//     cv::Vec3b(0x1A, 0x93, 0x34),
+//     cv::Vec3b(0x00, 0xD4, 0xBB),
+//     cv::Vec3b(0x2C, 0x99, 0xA8),
+//     cv::Vec3b(0x00, 0xC2, 0xFF),
+//     cv::Vec3b(0x34, 0x45, 0x93),
+//     cv::Vec3b(0x64, 0x73, 0xFF),
+//     cv::Vec3b(0x00, 0x18, 0xEC),
+//     cv::Vec3b(0x84, 0x38, 0xFF),
+//     cv::Vec3b(0x52, 0x00, 0x85),
+//     cv::Vec3b(0xCB, 0x38, 0xFF),
+//     cv::Vec3b(0xFF, 0x95, 0xC8),
+//     cv::Vec3b(0xFF, 0x37, 0xC7)
+// };
 static const int INPUT_H = Seg::INPUT_H;
 static const int INPUT_W = Seg::INPUT_W;
 static const int CLASS_NUM = Seg::CLASS_NUM;
@@ -112,6 +134,7 @@ ICudaEngine* build_engine(unsigned int maxBatchSize, IBuilder* builder, IBuilder
     auto yolo = addSegmentLayer(network, weightMap, "model.24", std::vector<IConvolutionLayer*>{det0, det1, det2});
     yolo->getOutput(0)->setName(OUTPUT_BLOB_NAME);
     network->markOutput(*yolo->getOutput(0));
+    print_dims(det0->getOutput(0)->getDimensions());
 
     /* ------ segment ------ */
     auto segConv1 = convBlock(network, weightMap, *bottleneck_csp17->getOutput(0), get_width(Seg::PROTO_NUM, gw), 3, 1, 1, "model.24.proto.cv1");
@@ -123,7 +146,7 @@ ICudaEngine* build_engine(unsigned int maxBatchSize, IBuilder* builder, IBuilder
     auto segConv2 = convBlock(network, weightMap, *segUpsample1->getOutput(0), get_width(Seg::PROTO_NUM, gw), 3, 1, 1, "model.24.proto.cv2");
     auto segConv3 = convBlock(network, weightMap, *segConv2->getOutput(0), Seg::MASK_NUM, 1, 1, 1, "model.24.proto.cv3");
 
-    // print_dims(yolo->getOutput(0)->getDimensions());
+    print_dims(segConv3->getOutput(0)->getDimensions());
     segConv3->getOutput(0)->setName(OUTPUT_MASK_NAME);
     network->markOutput(*segConv3->getOutput(0));
     
@@ -265,7 +288,7 @@ int main(int argc, char** argv) {
         return -1;
     }
     static float prob[BATCH_SIZE * OUTPUT_SIZE];
-    static float mask[BATCH_SIZE * Seg::MASK_NUM];
+    static float mask[BATCH_SIZE * Seg::MASK_NUM * (INPUT_H / 4) * (INPUT_W / 4)];
     IRuntime* runtime = createInferRuntime(gLogger);
     assert(runtime != nullptr);
     ICudaEngine* engine = runtime->deserializeCudaEngine(trtModelStream, size);
@@ -286,7 +309,7 @@ int main(int argc, char** argv) {
     // Create GPU buffers on device
     CUDA_CHECK(cudaMalloc((void**)&buffers[inputIndex], BATCH_SIZE * 3 * INPUT_H * INPUT_W * sizeof(float)));
     CUDA_CHECK(cudaMalloc((void**)&buffers[outputIndex], BATCH_SIZE * OUTPUT_SIZE * sizeof(float)));
-    CUDA_CHECK(cudaMalloc((void**)&buffers[maskIndex], BATCH_SIZE * Seg::MASK_NUM * sizeof(float)));
+    CUDA_CHECK(cudaMalloc((void**)&buffers[maskIndex], BATCH_SIZE * Seg::MASK_NUM * (INPUT_H / 4) * (INPUT_W / 4) * sizeof(float)));
 
     // Create stream
     cudaStream_t stream;
@@ -323,7 +346,7 @@ int main(int argc, char** argv) {
         CUDA_CHECK(cudaMemcpyAsync(
             prob, buffers[outputIndex], BATCH_SIZE * OUTPUT_SIZE * sizeof(float), cudaMemcpyDeviceToHost, stream));
         CUDA_CHECK(cudaMemcpyAsync(
-            mask, buffers[maskIndex], BATCH_SIZE * Seg::MASK_NUM * sizeof(float), cudaMemcpyDeviceToHost, stream));
+            mask, buffers[maskIndex], BATCH_SIZE * Seg::MASK_NUM * (INPUT_H / 4) * (INPUT_W / 4) * sizeof(float), cudaMemcpyDeviceToHost, stream));
         cudaStreamSynchronize(stream);
         auto end = std::chrono::system_clock::now();
         std::cout << "inference time: " 
@@ -337,11 +360,15 @@ int main(int argc, char** argv) {
         for (int b = 0; b < fcount; b++) {
             auto& res = batch_res[b];
             cv::Mat img = imgs_buffer[b];
+            float hScale = 4.0f * img.rows / INPUT_H;
+            float wScale = 4.0f * img.cols / INPUT_W;
+            cv::Mat segmentResult = get_mask(b, img, res, mask);
             for (size_t j = 0; j < res.size(); j++) {
                 cv::Rect r = get_rect(img, res[j].bbox);
                 cv::rectangle(img, r, cv::Scalar(0x27, 0xC1, 0x36), 2);
                 cv::putText(img, std::to_string((int)res[j].class_id), cv::Point(r.x, r.y - 1), cv::FONT_HERSHEY_PLAIN, 1.2, cv::Scalar(0xFF, 0xFF, 0xFF), 2);
             }
+            img = img * 0.5 + segmentResult * 0.5;
             cv::imwrite("_" + file_names[f - fcount + 1 + b], img);
         }
         fcount = 0;
