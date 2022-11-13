@@ -10,6 +10,7 @@ Get the trained models from pytorch, mxnet or tensorflow, etc. Export the weight
 
 ## News
 
+- `17 Oct 2022`. Add yolov5 segmentation models on windows in this repo.
 - `19 Sep 2022`. [QIANXUNZDL123](https://github.com/QIANXUNZDL123) and [lindsayshuo](https://github.com/lindsayshuo): YOLOv7.
 - `7 Sep 2022`. [xiang-wuu](https://github.com/xiang-wuu): YOLOv5 v6.2 classification models.
 - `19 Aug 2022`. [Dominic](https://github.com/Dominic-DallOsto) and [sbmalik](https://github.com/sbmalik): Yolov3-tiny and Arcface support TRT8.
