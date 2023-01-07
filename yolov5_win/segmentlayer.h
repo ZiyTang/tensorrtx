@@ -38,7 +38,7 @@ namespace nvinfer1
     class API SegmentLayerPlugin : public IPluginV2IOExt
     {
     public:
-        SegmentLayerPlugin(int classCount, int netWidth, int netHeight, 
+        SegmentLayerPlugin(int classCount, int maskNum, int netWidth, int netHeight, 
             int maxOut, const std::vector<Seg::YoloKernel>& vYoloKernel);
         SegmentLayerPlugin(const void* data, size_t length);
         ~SegmentLayerPlugin();
@@ -101,7 +101,7 @@ namespace nvinfer1
         int mYoloV5NetWidth;
         int mYoloV5NetHeight;
         int mMaxOutObject;
-        std::vector<Segment::YoloKernel> mYoloKernel;
+        std::vector<Seg::YoloKernel> mYoloKernel;
         void** mAnchor;
     };
 
