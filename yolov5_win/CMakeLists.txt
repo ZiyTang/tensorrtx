@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.0)
 
 project(yolov5) # 1
-set(OpenCV_DIR "C:/Users/admin/Desktop/yolov5_seg/CommonLib/opencv/build/build")  #2
-set(TRT_DIR "C:/Users/admin/Desktop/yolov5_seg/CommonLib/TensorRT")  #3
+set(OpenCV_DIR "D:/CppLibrary/opencv/build")  #2
+set(TRT_DIR "D:/CppLibrary/TensorRT-8.2.5.1")  #3
 
 add_definitions(-std=c++11)
 add_definitions(-DAPI_EXPORTS)
@@ -58,7 +58,9 @@ add_executable(yolov5
     ${PROJECT_SOURCE_DIR}/yololayer.cu 
     ${PROJECT_SOURCE_DIR}/yololayer.h
     ${PROJECT_SOURCE_DIR}/segmentlayer.cu 
-    ${PROJECT_SOURCE_DIR}/segmentlayer.h)   #4
+    ${PROJECT_SOURCE_DIR}/segmentlayer.h
+    ${PROJECT_SOURCE_DIR}/radianlayer.cu 
+    ${PROJECT_SOURCE_DIR}/radianlayer.h)   #4
 
 target_link_libraries(yolov5 "nvinfer" "nvinfer_plugin")   #5
 target_link_libraries(yolov5 ${OpenCV_LIBS})          #6
@@ -72,11 +74,29 @@ add_executable(yolov5_seg
     ${PROJECT_SOURCE_DIR}/yololayer.cu 
     ${PROJECT_SOURCE_DIR}/yololayer.h
     ${PROJECT_SOURCE_DIR}/segmentlayer.cu 
-    ${PROJECT_SOURCE_DIR}/segmentlayer.h)   #4
+    ${PROJECT_SOURCE_DIR}/segmentlayer.h
+    ${PROJECT_SOURCE_DIR}/radianlayer.cu 
+    ${PROJECT_SOURCE_DIR}/radianlayer.h)   #4
 
 target_link_libraries(yolov5_seg "nvinfer" "nvinfer_plugin")   #5
 target_link_libraries(yolov5_seg ${OpenCV_LIBS})          #6
 target_link_libraries(yolov5_seg ${CUDA_LIBRARIES})   #7
 target_link_libraries(yolov5_seg Threads::Threads)       #8
+
+add_executable(yolov5_obb 
+    ${PROJECT_SOURCE_DIR}/yolov5_obb.cpp 
+    ${PROJECT_SOURCE_DIR}/preprocess.cu 
+    ${PROJECT_SOURCE_DIR}/preprocess.h 
+    ${PROJECT_SOURCE_DIR}/yololayer.cu 
+    ${PROJECT_SOURCE_DIR}/yololayer.h
+    ${PROJECT_SOURCE_DIR}/segmentlayer.cu 
+    ${PROJECT_SOURCE_DIR}/segmentlayer.h
+    ${PROJECT_SOURCE_DIR}/radianlayer.cu 
+    ${PROJECT_SOURCE_DIR}/radianlayer.h)   #4
+
+target_link_libraries(yolov5_obb "nvinfer" "nvinfer_plugin")   #5
+target_link_libraries(yolov5_obb ${OpenCV_LIBS})          #6
+target_link_libraries(yolov5_obb ${CUDA_LIBRARIES})   #7
+target_link_libraries(yolov5_obb Threads::Threads)       #8
 
 

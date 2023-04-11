@@ -9,6 +9,7 @@
 #include "NvInfer.h"
 #include "yololayer.h"
 #include "segmentlayer.h"
+#include "radianlayer.h"
 
 using namespace nvinfer1;
 
@@ -100,6 +101,33 @@ cv::Mat get_mask(int batch, cv::Mat& img, std::vector<Seg::DetectionWithSeg> res
     }
     cv::resize(ret, ret, cv::Size(img.cols, img.rows), 0, 0, cv::INTER_NEAREST);
     return ret;
+}
+
+cv::RotatedRect get_rotated_rect(cv::Mat& img, float bbox[4], float radian) {
+    float l, r, t, b;
+    float r_w = Radian::INPUT_W / (img.cols * 1.f);
+    float r_h = Radian::INPUT_H / (img.rows * 1.f);
+    if (r_h > r_w) {
+        l = bbox[0] - bbox[2] / 2.f;
+        r = bbox[0] + bbox[2] / 2.f;
+        t = bbox[1] - bbox[3] / 2.f - (Yolo::INPUT_H - r_w * img.rows) / 2;
+        b = bbox[1] + bbox[3] / 2.f - (Yolo::INPUT_H - r_w * img.rows) / 2;
+        l = l / r_w;
+        r = r / r_w;
+        t = t / r_w;
+        b = b / r_w;
+    } else {
+        l = bbox[0] - bbox[2] / 2.f - (Yolo::INPUT_W - r_h * img.cols) / 2;
+        r = bbox[0] + bbox[2] / 2.f - (Yolo::INPUT_W - r_h * img.cols) / 2;
+        t = bbox[1] - bbox[3] / 2.f;
+        b = bbox[1] + bbox[3] / 2.f;
+        l = l / r_h;
+        r = r / r_h;
+        t = t / r_h;
+        b = b / r_h;
+    }
+    return cv::RotatedRect(cv::Point2f(round((l + r) / 2), round((t + b) / 2)), 
+        cv::Size2f(round(r - l), round(b - t)), radian);
 }
 
 float iou(float lbox[4], float rbox[4]) {
@@ -422,6 +450,42 @@ IPluginV2Layer* addSegmentLayer(INetworkDefinition *network, std::map<std::strin
     }
     auto segment = network->addPluginV2(&input_tensors[0], input_tensors.size(), *plugin_obj);
     return segment;
+}
+
+IPluginV2Layer* addRadianLayer(INetworkDefinition *network, std::map<std::string, Weights>& weightMap, 
+    std::string lname, std::vector<IConcatenationLayer*> dets) {
+    auto creator = getPluginRegistry()->getPluginCreator("RadianLayer_TRT", "1");
+    auto anchors = getAnchors(weightMap, lname);
+    PluginField plugin_fields[2];
+    int netinfo[4] = {Radian::CLASS_NUM, Radian::INPUT_W, Radian::INPUT_H, Radian::MAX_OUTPUT_BBOX_COUNT};
+    plugin_fields[0].data = netinfo;
+    plugin_fields[0].length = 4;
+    plugin_fields[0].name = "netinfo";
+    plugin_fields[0].type = PluginFieldType::kFLOAT32;
+    int scale = 8;
+    std::vector<Radian::YoloKernel> kernels;
+    for (size_t i = 0; i < anchors.size(); i++) {
+        Radian::YoloKernel kernel;
+        kernel.width = Radian::INPUT_W / scale;
+        kernel.height = Radian::INPUT_H / scale;
+        memcpy(kernel.anchors, &anchors[i][0], anchors[i].size() * sizeof(float));
+        kernels.push_back(kernel);
+        scale *= 2;
+    }
+    plugin_fields[1].data = &kernels[0];
+    plugin_fields[1].length = kernels.size();
+    plugin_fields[1].name = "kernels";
+    plugin_fields[1].type = PluginFieldType::kFLOAT32;
+    PluginFieldCollection plugin_data;
+    plugin_data.nbFields = 2;
+    plugin_data.fields = plugin_fields;
+    IPluginV2 *plugin_obj = creator->createPlugin("radianlayer", &plugin_data);
+    std::vector<ITensor*> input_tensors;
+    for (auto det: dets) {
+        input_tensors.push_back(det->getOutput(0));
+    }
+    auto radian = network->addPluginV2(&input_tensors[0], input_tensors.size(), *plugin_obj);
+    return radian;
 }
 #endif  // YOLOV5_COMMON_H_
 
