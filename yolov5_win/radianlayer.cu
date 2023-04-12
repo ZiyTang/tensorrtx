@@ -33,9 +33,9 @@ namespace nvinfer1
         mMaxOutObject = maxOut;
         mYoloKernel = vYoloKernel;
         mKernelCount = vYoloKernel.size();
-
+         
         CUDA_CHECK(cudaMallocHost(&mAnchor, mKernelCount * sizeof(void*)));
-        size_t AnchorLen = sizeof(float)* CHECK_COUNT * 2;
+        size_t AnchorLen = sizeof(float)* Radian::CHECK_COUNT * 2;
         for (int ii = 0; ii < mKernelCount; ii++)
         {
             CUDA_CHECK(cudaMalloc(&mAnchor[ii], AnchorLen));
@@ -68,7 +68,7 @@ namespace nvinfer1
         memcpy(mYoloKernel.data(), d, kernelSize);
         d += kernelSize;
         CUDA_CHECK(cudaMallocHost(&mAnchor, mKernelCount * sizeof(void*)));
-        size_t AnchorLen = sizeof(float)* CHECK_COUNT * 2;
+        size_t AnchorLen = sizeof(float)* Radian::CHECK_COUNT * 2;
         for (int ii = 0; ii < mKernelCount; ii++)
         {
             CUDA_CHECK(cudaMalloc(&mAnchor[ii], AnchorLen));
@@ -181,7 +181,7 @@ namespace nvinfer1
 
     __global__ void CalRadian(const float *input, float *output, int noElements,
         const int netwidth, const int netheight, int maxoutobject, int yoloWidth, int yoloHeight, 
-        const float anchors[CHECK_COUNT * 2], int classes, int outputElem)
+        const float anchors[Radian::CHECK_COUNT * 2], int classes, int outputElem)
     {
 
         int idx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -191,9 +191,9 @@ namespace nvinfer1
         int bnIdx = idx / total_grid;
         idx = idx - total_grid * bnIdx;
         int info_len_i = 5 + classes + Radian::RAD_NUM;
-        const float* curInput = input + bnIdx * (info_len_i * total_grid * CHECK_COUNT);
+        const float* curInput = input + bnIdx * (info_len_i * total_grid * Radian::CHECK_COUNT);
 
-        for (int k = 0; k < CHECK_COUNT; ++k) {
+        for (int k = 0; k < Radian::CHECK_COUNT; ++k) {
             float box_prob = LogistRad(curInput[idx + k * info_len_i * total_grid + 4 * total_grid]);
             if (box_prob < IGNORE_THRESH) continue;
             int class_id = 0;

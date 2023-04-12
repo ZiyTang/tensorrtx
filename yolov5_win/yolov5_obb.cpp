@@ -10,10 +10,10 @@
 
 #define USE_FP16  // set USE_INT8 or USE_FP16 or USE_FP32
 #define DEVICE 0  // GPU id
-#define NMS_THRESH 0.4f
-#define CONF_THRESH 0.5f
+#define NMS_THRESH 0.1f
+#define CONF_THRESH 0.4f
 #define BATCH_SIZE 1
-#define MAX_IMAGE_INPUT_SIZE_THRESH 3000 * 3000 // ensure it exceed the maximum size in the input images !
+#define MAX_IMAGE_INPUT_SIZE_THRESH 5000 * 5000 // ensure it exceed the maximum size in the input images !
 
 // stuff we know about the network and the input/output blobs
 // static std::vector<cv::Vec3b> COLOR = {
@@ -43,8 +43,10 @@ static const int INPUT_W = Radian::INPUT_W;
 static const int CLASS_NUM = Radian::CLASS_NUM;
 static const int OUTPUT_SIZE = Radian::MAX_OUTPUT_BBOX_COUNT * sizeof(Radian::DetectionWithRad) / sizeof(float) + 1;  // we assume the yololayer outputs no more than MAX_OUTPUT_BBOX_COUNT boxes that conf >= 0.1
 const char* INPUT_BLOB_NAME = "data";
-const char* OUTPUT_BLOB_NAME = "prob";
-// const char* OUTPUT_RAD_NAME = "radian";
+const char* OUTPUT_BLOB_NAME0 = "prob0";
+const char* OUTPUT_BLOB_NAME1 = "prob1";
+const char* OUTPUT_BLOB_NAME2 = "prob2";
+const char* OUTPUT_BLOB_NAME3 = "prob3";
 static Logger gLogger;
 
 static int get_width(int x, float gw, int divisor = 8) 
@@ -160,20 +162,21 @@ ICudaEngine* build_engine(unsigned int maxBatchSize, IBuilder* builder, IBuilder
     ITensor* inputResult0[] = { det0->getOutput(0), radian0->getOutput(0) };
     auto res0 = network->addConcatenation(inputResult0, 2);
     
-    auto yolo0 = addRadianLayer(network, weightMap, "model.27", std::vector<IConcatenationLayer *> { res0 });
-    auto yolo1 = addRadianLayer(network, weightMap, "model.27", std::vector<IConcatenationLayer *> { res1 });
-    auto yolo2 = addRadianLayer(network, weightMap, "model.27", std::vector<IConcatenationLayer *> { res2 });
-    auto yolo3 = addRadianLayer(network, weightMap, "model.27", std::vector<IConcatenationLayer *> { res3 });
-    yolo0->getOutput(0)->setName(OUTPUT_BLOB_NAME + '0');
-    yolo1->getOutput(0)->setName(OUTPUT_BLOB_NAME + '1');
-    yolo2->getOutput(0)->setName(OUTPUT_BLOB_NAME + '2');
-    yolo3->getOutput(0)->setName(OUTPUT_BLOB_NAME + '3');
+    auto yolo0 = addRadianLayer(network, weightMap, "model.27", std::vector<IConcatenationLayer *> { res0 }, 0);
+    auto yolo1 = addRadianLayer(network, weightMap, "model.27", std::vector<IConcatenationLayer *> { res1 }, 1);
+    auto yolo2 = addRadianLayer(network, weightMap, "model.27", std::vector<IConcatenationLayer *> { res2 }, 2);
+    auto yolo3 = addRadianLayer(network, weightMap, "model.27", std::vector<IConcatenationLayer *> { res3 }, 3);
+    yolo0->getOutput(0)->setName(OUTPUT_BLOB_NAME0);
+    yolo1->getOutput(0)->setName(OUTPUT_BLOB_NAME1);
+    yolo2->getOutput(0)->setName(OUTPUT_BLOB_NAME2);
+    yolo3->getOutput(0)->setName(OUTPUT_BLOB_NAME3);
     network->markOutput(*yolo0->getOutput(0));
     network->markOutput(*yolo1->getOutput(0));
     network->markOutput(*yolo2->getOutput(0));
     network->markOutput(*yolo3->getOutput(0));
     print_dims(res0->getOutput(0)->getDimensions());
-    
+    print_dims(yolo0->getOutput(0)->getDimensions());
+
     // Build engine
     builder->setMaxBatchSize(maxBatchSize);
     config->setMaxWorkspaceSize(16 * (1 << 20));  // 16MB
@@ -322,27 +325,26 @@ int main(int argc, char** argv) {
     IExecutionContext* context = engine->createExecutionContext();
     assert(context != nullptr);
     delete[] trtModelStream;
-    assert(engine->getNbBindings() == 2);
+    assert(engine->getNbBindings() == 5);
     float* buffers[5];
     // In order to bind the buffers, we need to know the names of the input and output tensors.
     // Note that indices are guaranteed to be less than IEngine::getNbBindings()
     const int inputIndex = engine->getBindingIndex(INPUT_BLOB_NAME);
-    const int outputIndex0 = engine->getBindingIndex(OUTPUT_BLOB_NAME + '0');
-    const int outputIndex1 = engine->getBindingIndex(OUTPUT_BLOB_NAME + '1');
-    const int outputIndex2 = engine->getBindingIndex(OUTPUT_BLOB_NAME + '2');
-    const int outputIndex3 = engine->getBindingIndex(OUTPUT_BLOB_NAME + '3');
+    const int outputIndex0 = engine->getBindingIndex(OUTPUT_BLOB_NAME0);
+    const int outputIndex1 = engine->getBindingIndex(OUTPUT_BLOB_NAME1);
+    const int outputIndex2 = engine->getBindingIndex(OUTPUT_BLOB_NAME2);
+    const int outputIndex3 = engine->getBindingIndex(OUTPUT_BLOB_NAME3);
     assert(inputIndex == 0);
     assert(outputIndex0 == 1);
-    assert(outputIndex0 == 2);
-    assert(outputIndex0 == 3);
-    assert(outputIndex0 == 4);
+    assert(outputIndex1 == 2);
+    assert(outputIndex2 == 3);
+    assert(outputIndex3 == 4);
     // Create GPU buffers on device
     CUDA_CHECK(cudaMalloc((void**)&buffers[inputIndex], BATCH_SIZE * 3 * INPUT_H * INPUT_W * sizeof(float)));
     CUDA_CHECK(cudaMalloc((void**)&buffers[outputIndex0], BATCH_SIZE * OUTPUT_SIZE * sizeof(float)));
     CUDA_CHECK(cudaMalloc((void**)&buffers[outputIndex1], BATCH_SIZE * OUTPUT_SIZE * sizeof(float)));
     CUDA_CHECK(cudaMalloc((void**)&buffers[outputIndex2], BATCH_SIZE * OUTPUT_SIZE * sizeof(float)));
     CUDA_CHECK(cudaMalloc((void**)&buffers[outputIndex3], BATCH_SIZE * OUTPUT_SIZE * sizeof(float)));
-    // CUDA_CHECK(cudaMalloc((void**)&buffers[maskIndex], BATCH_SIZE * Radian::RAD_NUM * (INPUT_H / 4) * (INPUT_W / 4) * sizeof(float)));
 
     // Create stream
     cudaStream_t stream;
@@ -398,7 +400,7 @@ int main(int argc, char** argv) {
         for (int i = 0; i < prob.size(); i++) {
             double avgProb = 0.;
             unsigned count = sizeof(prob[i]) / sizeof(float);
-            for (int j = 0; j < count; j++) {
+            for (int j = 4; j < count; j += 7) {
                 avgProb += prob[i][j];
             }
             avgProb /= count;
@@ -423,7 +425,7 @@ int main(int argc, char** argv) {
                 for (int v = 0; v < 4; v++) {
                     cv::line(img, vertices[v], vertices[(v + 1)%4], cv::Scalar(0x27, 0xC1, 0x36), 2);
                 }
-                cv::putText(img, std::to_string((int)res[j].class_id), r.center, cv::FONT_HERSHEY_PLAIN, 1.2, cv::Scalar(0xFF, 0xFF, 0xFF), 2);
+                // cv::putText(img, std::to_string((int)res[j].class_id), r.center, cv::FONT_HERSHEY_PLAIN, 1.2, cv::Scalar(0xFF, 0xFF, 0xFF), 2);
             }
             cv::imwrite("_" + file_names[f - fcount + 1 + b], img);
         }

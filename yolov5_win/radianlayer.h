@@ -8,7 +8,7 @@
 
 namespace Radian
 {
-    static constexpr int CHECK_COUNT = 3;
+    static constexpr int CHECK_COUNT = 1;
     static constexpr float IGNORE_THRESH = 0.1f;
     struct YoloKernel
     {
@@ -16,9 +16,8 @@ namespace Radian
         int height;
         float anchors[CHECK_COUNT * 2];
     };
-    static constexpr int MAX_OUTPUT_BBOX_COUNT = 1000;
+    static constexpr int MAX_OUTPUT_BBOX_COUNT = 10000;
     static constexpr int CLASS_NUM = 1;
-    static constexpr int PROTO_NUM = 256;
     static constexpr int RAD_NUM = 180;
     static constexpr int INPUT_H = 608;  // yolov5's input height and width must be divisible by 32.
     static constexpr int INPUT_W = 608;

@@ -368,10 +368,10 @@ ILayer* SPPF(INetworkDefinition *network, std::map<std::string, Weights>& weight
     return cv2;
 }
 
-std::vector<std::vector<float>> getAnchors(std::map<std::string, Weights>& weightMap, std::string lname) {
+std::vector<std::vector<float>> getAnchors(std::map<std::string, Weights>& weightMap, std::string lname, int check_count) {
     std::vector<std::vector<float>> anchors;
     Weights wts = weightMap[lname + ".anchor_grid"];
-    int anchor_len = Yolo::CHECK_COUNT * 2;
+    int anchor_len = check_count * 2;
     for (int i = 0; i < wts.count / anchor_len; i++) {
         auto *p = (const float*)wts.values + i * anchor_len;
         std::vector<float> anchor(p, p + anchor_len);
@@ -383,7 +383,7 @@ std::vector<std::vector<float>> getAnchors(std::map<std::string, Weights>& weigh
 IPluginV2Layer* addYoLoLayer(INetworkDefinition *network, std::map<std::string, Weights>& weightMap, 
     std::string lname, std::vector<IConvolutionLayer*> dets) {
     auto creator = getPluginRegistry()->getPluginCreator("YoloLayer_TRT", "1");
-    auto anchors = getAnchors(weightMap, lname);
+    auto anchors = getAnchors(weightMap, lname, Yolo::CHECK_COUNT);
     PluginField plugin_fields[2];
     int netinfo[4] = {Yolo::CLASS_NUM, Yolo::INPUT_W, Yolo::INPUT_H, Yolo::MAX_OUTPUT_BBOX_COUNT};
     plugin_fields[0].data = netinfo;
@@ -419,7 +419,7 @@ IPluginV2Layer* addYoLoLayer(INetworkDefinition *network, std::map<std::string, 
 IPluginV2Layer* addSegmentLayer(INetworkDefinition *network, std::map<std::string, Weights>& weightMap, 
     std::string lname, std::vector<IConvolutionLayer*> dets) {
     auto creator = getPluginRegistry()->getPluginCreator("SegmentLayer_TRT", "1");
-    auto anchors = getAnchors(weightMap, lname);
+    auto anchors = getAnchors(weightMap, lname, Seg::CHECK_COUNT);
     PluginField plugin_fields[2];
     int netinfo[5] = {Seg::CLASS_NUM, Seg::MASK_NUM, Seg::INPUT_W, Seg::INPUT_H, Seg::MAX_OUTPUT_BBOX_COUNT};
     plugin_fields[0].data = netinfo;
@@ -453,16 +453,16 @@ IPluginV2Layer* addSegmentLayer(INetworkDefinition *network, std::map<std::strin
 }
 
 IPluginV2Layer* addRadianLayer(INetworkDefinition *network, std::map<std::string, Weights>& weightMap, 
-    std::string lname, std::vector<IConcatenationLayer*> dets) {
+    std::string lname, std::vector<IConcatenationLayer*> dets, unsigned kernel_index) {
     auto creator = getPluginRegistry()->getPluginCreator("RadianLayer_TRT", "1");
-    auto anchors = getAnchors(weightMap, lname);
+    auto anchors = getAnchors(weightMap, lname, Radian::CHECK_COUNT);
     PluginField plugin_fields[2];
     int netinfo[4] = {Radian::CLASS_NUM, Radian::INPUT_W, Radian::INPUT_H, Radian::MAX_OUTPUT_BBOX_COUNT};
     plugin_fields[0].data = netinfo;
     plugin_fields[0].length = 4;
     plugin_fields[0].name = "netinfo";
     plugin_fields[0].type = PluginFieldType::kFLOAT32;
-    int scale = 8;
+    int scale = 2;
     std::vector<Radian::YoloKernel> kernels;
     for (size_t i = 0; i < anchors.size(); i++) {
         Radian::YoloKernel kernel;
@@ -472,8 +472,8 @@ IPluginV2Layer* addRadianLayer(INetworkDefinition *network, std::map<std::string
         kernels.push_back(kernel);
         scale *= 2;
     }
-    plugin_fields[1].data = &kernels[0];
-    plugin_fields[1].length = kernels.size();
+    plugin_fields[1].data = &kernels[kernel_index];
+    plugin_fields[1].length = 1;
     plugin_fields[1].name = "kernels";
     plugin_fields[1].type = PluginFieldType::kFLOAT32;
     PluginFieldCollection plugin_data;
