@@ -392,28 +392,45 @@ int main(int argc, char** argv) {
                     << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() 
                     << "ms" << std::endl;
         std::vector<float*> prob { prob0, prob1, prob2, prob3 };
-        std::vector<float> probabilities { 0, 0, 0, 0 };
-        float avgArea = 0.;
-        float avgWidth = 0.;
-        double maxProb = 0.;
-        unsigned maxProbIndex = 0;
+        std::vector<float> layer_prob { 0, 0, 0, 0 };
+        unsigned total_count;
+        float avg_width = 0.;
+        float avg_area = 0.;
+        unsigned best_index = 0;
         for (int i = 0; i < prob.size(); i++) {
-            double avgProb = 0.;
-            unsigned count = sizeof(prob[i]) / sizeof(float);
-            for (int j = 4; j < count; j += 7) {
-                avgProb += prob[i][j];
+            double avg_prob = 0.;
+            unsigned count = BATCH_SIZE * OUTPUT_SIZE;
+            total_count += count;
+            for (int j = 1; j < count; j += 7) {
+                if (prob[i][j + 4] < 0.1) continue; 
+                avg_prob += prob[i][j + 4];
+                avg_width += prob[i][j + 2];
+                avg_area += prob[i][j + 2] * prob[i][j + 3];
             }
-            avgProb /= count;
-            probabilities[i] = avgProb;
-            if (avgProb > maxProb) {
-                maxProb = avgProb;
-                maxProbIndex = i;
+            avg_prob /= count;
+            layer_prob[i] = avg_prob;
+        }
+        avg_area /= total_count;
+        avg_width /= total_count;
+        // choose layer
+        if (avg_area < 20 || avg_width < 5) {
+            best_index = 0;
+        } else if (avg_width < 12) {
+            best_index = 1;
+        } else {
+            for (int i = 1; i < layer_prob.size(); i++) {
+                if (layer_prob[i] > layer_prob[best_index]) {
+                    best_index = i;
+                }
+            }
+            if (best_index == 2 && layer_prob[2] - layer_prob[1] < 0.8) {
+                best_index = 1;
             }
         }
         std::vector<std::vector<Radian::DetectionWithRad>> batch_res(fcount);
         for (int b = 0; b < fcount; b++) {
             auto& res = batch_res[b];
-            nms<Radian::DetectionWithRad>(res, &prob[maxProbIndex][b * OUTPUT_SIZE], CONF_THRESH, NMS_THRESH);
+            nms<Radian::DetectionWithRad>(res, &prob[best_index][b * OUTPUT_SIZE], CONF_THRESH, NMS_THRESH, Radian::MAX_OUTPUT_BBOX_COUNT);
         }
         for (int b = 0; b < fcount; b++) {
             auto& res = batch_res[b];

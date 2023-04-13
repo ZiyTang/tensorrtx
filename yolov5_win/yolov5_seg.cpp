@@ -355,7 +355,7 @@ int main(int argc, char** argv) {
         std::vector<std::vector<Seg::DetectionWithSeg>> batch_res(fcount);
         for (int b = 0; b < fcount; b++) {
             auto& res = batch_res[b];
-            nms<Seg::DetectionWithSeg>(res, &prob[b * OUTPUT_SIZE], CONF_THRESH, NMS_THRESH);
+            nms<Seg::DetectionWithSeg>(res, &prob[b * OUTPUT_SIZE], CONF_THRESH, NMS_THRESH, Seg::MAX_OUTPUT_BBOX_COUNT);
         }
         for (int b = 0; b < fcount; b++) {
             auto& res = batch_res[b];

@@ -404,7 +404,7 @@ int main(int argc, char** argv) {
         std::vector<std::vector<Yolo::Detection>> batch_res(fcount);
         for (int b = 0; b < fcount; b++) {
             auto& res = batch_res[b];
-            nms(res, &prob[b * OUTPUT_SIZE], CONF_THRESH, NMS_THRESH);
+            nms(res, &prob[b * OUTPUT_SIZE], CONF_THRESH, NMS_THRESH, Yolo::MAX_OUTPUT_BBOX_COUNT);
         }
         for (int b = 0; b < fcount; b++) {
             auto& res = batch_res[b];

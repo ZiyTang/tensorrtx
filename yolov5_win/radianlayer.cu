@@ -223,11 +223,11 @@ namespace nvinfer1
             det->bbox[2] = det->bbox[2] * det->bbox[2] * anchors[2 * k];
             det->bbox[3] = 2.0f * LogistRad(curInput[idx + k * info_len_i * total_grid + 3 * total_grid]);
             det->bbox[3] = det->bbox[3] * det->bbox[3] * anchors[2 * k + 1];
-            det->conf = box_prob * max_cls_prob;
+            det->conf = box_prob;
             det->class_id = class_id;
             float max_rad_prob = 0.0;
             for (int i = 0; i < Radian::RAD_NUM; i++) {
-                float p = LogistRad(curInput[idx + k * info_len_i * total_grid + (i + 5 + classes) * total_grid]);
+                float p = curInput[idx + k * info_len_i * total_grid + (i + 5 + classes) * total_grid];
                 if (p > max_rad_prob) {
                     max_rad_prob = p;
                     det->radian = (float)i;

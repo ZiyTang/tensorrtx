@@ -9,7 +9,7 @@
 namespace Radian
 {
     static constexpr int CHECK_COUNT = 1;
-    static constexpr float IGNORE_THRESH = 0.1f;
+    static constexpr float IGNORE_THRESH = 0.4f;
     struct YoloKernel
     {
         int width;

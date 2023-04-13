@@ -110,15 +110,15 @@ cv::RotatedRect get_rotated_rect(cv::Mat& img, float bbox[4], float radian) {
     if (r_h > r_w) {
         l = bbox[0] - bbox[2] / 2.f;
         r = bbox[0] + bbox[2] / 2.f;
-        t = bbox[1] - bbox[3] / 2.f - (Yolo::INPUT_H - r_w * img.rows) / 2;
-        b = bbox[1] + bbox[3] / 2.f - (Yolo::INPUT_H - r_w * img.rows) / 2;
+        t = bbox[1] - bbox[3] / 2.f - (Radian::INPUT_H - r_w * img.rows) / 2;
+        b = bbox[1] + bbox[3] / 2.f - (Radian::INPUT_H - r_w * img.rows) / 2;
         l = l / r_w;
         r = r / r_w;
         t = t / r_w;
         b = b / r_w;
     } else {
-        l = bbox[0] - bbox[2] / 2.f - (Yolo::INPUT_W - r_h * img.cols) / 2;
-        r = bbox[0] + bbox[2] / 2.f - (Yolo::INPUT_W - r_h * img.cols) / 2;
+        l = bbox[0] - bbox[2] / 2.f - (Radian::INPUT_W - r_h * img.cols) / 2;
+        r = bbox[0] + bbox[2] / 2.f - (Radian::INPUT_W - r_h * img.cols) / 2;
         t = bbox[1] - bbox[3] / 2.f;
         b = bbox[1] + bbox[3] / 2.f;
         l = l / r_h;
@@ -151,10 +151,10 @@ bool cmp(const T& a, const T& b) {
 }
 
 template <class T>
-void nms(std::vector<T>& res, float *output, float conf_thresh, float nms_thresh = 0.5) {
+void nms(std::vector<T>& res, float *output, float conf_thresh, float nms_thresh = 0.5, unsigned max_output_count = 1000) {
     int det_size = sizeof(T) / sizeof(float);
     std::map<float, std::vector<T>> m;
-    for (int i = 0; i < output[0] && i < Yolo::MAX_OUTPUT_BBOX_COUNT; i++) {
+    for (int i = 0; i < output[0] && i < max_output_count; i++) {
         if (output[1 + det_size * i + 4] <= conf_thresh) continue;
         T det;
         memcpy(&det, &output[1 + det_size * i], det_size * sizeof(float));
